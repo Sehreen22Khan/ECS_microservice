@@ -1,8 +1,8 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: >
-  AWS CloudFormation template to deploy a Next.js frontend, a Flask backend,
-  and a PostgreSQL database on AWS using ECS Fargate, RDS, and other services,
-  including CI/CD pipelines with minimal manual steps.
+  AWS CloudFormation template to deploy a Flask backend
+  on AWS using ECS Fargate, and other services,
+  including CI/CD pipelines with no manual steps.
 
 Parameters:
   EnvironmentName:
@@ -34,7 +34,7 @@ Parameters:
     Description: "GitHub username or organization owning the repository"
   GitHubRepositoryName:
     Type: String
-    Description: "Name of the GitHub repository containing both frontend and backend"
+    Description: "Name of the GitHub repository containing the backend"
 
 Resources:
 
@@ -318,11 +318,33 @@ Resources:
               Service: codepipeline.amazonaws.com
             Action: sts:AssumeRole
       Path: "/"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AWSCodePipeline_FullAccess
       Policies:
         - PolicyName: CodePipelinePermissions
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
+              # ECS permissions needed by the ECS deploy action
+              - Effect: Allow
+                Action:
+                  - ecs:DescribeClusters
+                  - ecs:DescribeServices
+                  - ecs:DescribeTaskDefinition
+                  - ecs:RegisterTaskDefinition
+                  - ecs:UpdateService
+                  - ecs:DescribeTaskSets
+                  - ecs:CreateTaskSet
+                  - ecs:DeleteTaskSet
+                Resource: '*'
+
+              # Allow CodePipeline to pass the ECS task execution role to ECS
+              - Effect: Allow
+                Action:
+                  - iam:PassRole
+                Resource:
+                  - !GetAtt ECSTaskExecutionRole.Arn
+
               # Permissions to interact with CodeBuild
               - Effect: Allow
                 Action:
@@ -332,11 +354,12 @@ Resources:
                   - codebuild:ListBuildsForProject
                 Resource:
                   - !Sub "arn:aws:codebuild:${AWS::Region}:${AWS::AccountId}:project/${EnvironmentName}-build-project"
+
               # Permission to pass the CodeBuild service role
               - Effect: Allow
-                Action:
-                  - iam:PassRole
+                Action: iam:PassRole
                 Resource: !GetAtt CodeBuildServiceRole.Arn
+
               # Permissions for S3 artifact bucket
               - Effect: Allow
                 Action:
@@ -347,13 +370,12 @@ Resources:
                 Resource:
                   - !Sub "arn:aws:s3:::${CodePipelineArtifactStoreBucket}"
                   - !Sub "arn:aws:s3:::${CodePipelineArtifactStoreBucket}/*"
-              # Permission to access Secrets Manager
+
+              # Permission to access Secrets Manager (for GitHub token)
               - Effect: Allow
                 Action:
                   - secretsmanager:GetSecretValue
                 Resource: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:github/personal-access-token*"
-      ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/AWSCodePipeline_FullAccess
 
   CodePipelineArtifactStoreBucketPolicy:
     Type: AWS::S3::BucketPolicy
