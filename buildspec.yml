@@ -1,0 +1,30 @@
+version: 0.2
+
+phases:
+  pre_build:
+    commands:
+      - echo "Retrieving AWS Account ID..."
+      - export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+      - echo "AWS_ACCOUNT_ID is $AWS_ACCOUNT_ID"
+      - echo "AWS_DEFAULT_REGION is $AWS_DEFAULT_REGION"
+      - echo "ENVIRONMENT_NAME is $ENVIRONMENT_NAME"
+      - echo Logging in to Amazon ECR...
+      - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com
+  build:
+    commands:
+      - echo Build started on `date`
+      - echo Building the backend Docker image...
+      - docker build -t $ENVIRONMENT_NAME-backend ./
+      - docker tag $ENVIRONMENT_NAME-backend:latest $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$ENVIRONMENT_NAME-backend-repo:latest
+  post_build:
+    commands:
+      - echo Build completed on `date`
+      - echo Pushing the backend Docker image...
+      - docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$ENVIRONMENT_NAME-backend-repo:latest
+      - echo Writing image definitions file...
+      - |
+        printf '[{"name":"backend","imageUri":"%s.dkr.ecr.%s.amazonaws.com/%s-backend-repo:latest"}]' \
+        $AWS_ACCOUNT_ID $AWS_DEFAULT_REGION $ENVIRONMENT_NAME $AWS_ACCOUNT_ID $AWS_DEFAULT_REGION $ENVIRONMENT_NAME > imagedefinitions.json
+artifacts:
+  files:
+    - imagedefinitions.json
